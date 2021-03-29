@@ -3952,8 +3952,6 @@ immediate termination of the invocation.
 After a `discard` statement is executed, control flow is non-uniform for the
 duration of the entry point.
 
-Issue: [[#uniform-control-flow]] needs to state whether all invocations being discarded maintains uniform control flow.
-
 <div class='example' heading='Using the discard statement to throw away a fragment'>
   <xmp>
   var<private> will_emit_color: bool = false;
