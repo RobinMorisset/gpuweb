@@ -4562,11 +4562,11 @@ The analysis is what actually defines these concepts, and when a program is vali
 
 Control-flow is said to be uniform at a point in the program if all invocations execute in lockstep at that program point.
 An expression is said to be uniform if it is in uniform control-flow, and all invocations compute the same value for it.
-The location of a local variable is said to be uniform, if all invocations have the same value in that variable at every program point where it is live.
+A local variable is said to be uniform, if all invocations have the same value in that variable at every program point where it is live.
 
 ### Uniformity analysis overview ### {#uniformity-overview}
 
-In this section we specify an analysis that verifies that functions which are only safe to call in uniform control flow (barriers and derivatives) are only called in such a context.
+In this section we specify an analysis that verifies that functions which are only safe to call in uniform control flow (e.g. barriers and derivatives) are only called in such a context.
 
 <div class="note">Note: This analysis has the following desirable properties:
       - Sound (meaning that it rejects every program that would break the uniformity requirements of builtins)
@@ -4575,27 +4575,37 @@ In this section we specify an analysis that verifies that functions which are on
       - If the analysis refuses a program, it provides a straightforward chain of implications that can be used to craft a good error message
 </div>
 
-The analysis analyzes each function in turn, verifying that there is a context where it is safe to call this function (otherwise it rejects the program), and computing metadata about the function to help analyze its callers in turn. This means that the call graph must first be built, and functions must be analyzed from the leaves (functions that call no function outside the standard library) upwards (toward the entry point), so that whenever we analyze a function we have already computed
-the metadata for all of its callees. There is no risk of being trapped in a cycle, as recurrence is forbidden in the language.
+The analysis analyzes each function in turn, verifying that there is a context where it is safe to call this function. It rejects the program as invalid if there is no such context.
+
+At the same time, it computies metadata about the function to help analyze its callers in turn. This means that the call graph must first be built, and functions must be analyzed from the leaves upwards, i.e. from functions that call no function outside the standard library toward the entry point. This way, whenever a function is analyzed, the metadata for all of its callees has already been computed. There is no risk of being trapped in a cycle, as recurrence is forbidden in the language.
+
+Note: another way of saying the same thing is that we do a topological sort of functions ordered by the "is a (possibly indirect) callee of" partial order, and analyze in that order.
 
 ### Analyzing the uniformity requirements of a function ### {#uniformity-function}
 
 Each function is analyzed in two phases.
 
-The first phase walks over the AST of the function, building a directed graph along the way.
+The first phase walks over the AST of the function, building a directed graph along the way based on the rules in the following subsections.
 The second phase explores that graph, resulting in either rejecting the program, or computing the constraints on calling this function.
 
-Note: Each vertex in this graph corresponds either to the statement "The control-flow at a specific program point must be uniform" or to "The value of a specific expression must be uniform" or to "A specific variable must always hold a uniform value" or is one of the special vertices True and False.
-      Each (directed) edge corresponds to an implication.
+<div class="note">Note: apart from two special vertices True and False, all vertices can be understood as having one of the following meanings:
+        - The control-flow at a specific program point must be uniform
+        - The value of a specific expression must be uniform
+        - A specific variable must always hold a uniform value
+
+        An edge can be understood as an implication from the statement corresponding to its source vertex to the statement corresponding to its target vertex.
+        In particular, to express that something must always be uniform (e.g. the control-flow at the call site of a derivative), we simply add an edge from True to the corresponding vertex.
+        Reciprocally, to express that we cannot ensure the uniformity of something (e.g. a variable which holds the thread id), we simply add an edge from the corresponding vertex to False
+</div>
 
 In more detail, here is the algorithm for analyzing a function:
 
 * Create some vertices called "True", "False", "CF_start", "CF_return" and if the function is non-void a vertex called "Value_return"
 * Create one vertex for each parameter of the function which we'll call "arg_i"
 * Walk over the AST of the function, adding vertices and edges to the graph following the rules of the next section.
-* Look at the *Behaviors* of the function body treated as a statement (see next section):
+* Look at the *Behaviors* of the function body, using the rules for statements in the next section
     * If it has a behavior which is neither Nothing nor Discard, then reject the program
-    * Else remember it for later it.
+    * Else remember it for later.
 * Look at which vertices are reachable from "True"
     * If this set includes the vertex "False", then reject the program.
     * Remember for later whether this set includes "CF_start" and/or any of the "arg_i"
@@ -4603,19 +4613,20 @@ In more detail, here is the algorithm for analyzing a function:
 * Look at which vertices are reachable from "CF_return"
     * Remember for later whether this set includes "False" and/or any of the "arg_i"
     * (optional, makes the analysis faster) Remove from the graph all vertices that have been visited
-* Look at which vertices are reachable from "Value_return"
+* If "Value_return" exists, look at which vertices are reachable from it
     * Remember for later whether this set includes "False" and/or any of the "arg_i"
 
-Note: Anything which is not explicitly remembered, including the entire graph can be destroyed at this point. Also note that the information that we need to remember to analyze the caller is linear in the number of parameters of the function.
+Note: Anything which is not explicitly remembered, including the entire graph can be destroyed at this point. The little information that we do need to remember to analyze the caller is linear in the number of parameters of the function.
 
 ### Uniformity rules for statements ### {#uniformity-statements}
 
 In order to properly deal with reconvergence we must know when there is a single way for control to flow out of a statement.
 We achieve this by assigning to each statement a set of *behaviors* out of {Return, Break, Continue, Discard, Nothing}.
+Intuitively, this set corresponds to the ways that control-flow can exit the statement.
 
 TODO: do we need an extra behavior for possibly infinite loops? I should check whether some form of reconvergence happens after something like `while(tid mod 2) {}`.
 
-If the set of behaviors for a statement is a singleton, we take that to mean that reconvergence happened, and we pick the vertex corresponding to control-flow at the start of the statement as the vertex corresponding to control-flow at the exit of the statement, overriding the other rules below.
+If the set of behaviors for a statement has a single element, this means that we either did not diverge within the statement, or we reconverged, and we pick the vertex corresponding to control-flow at the start of the statement as the vertex corresponding to control-flow at the exit of the statement, overriding the other rules below.
 
 The rules for analyzing statements take as argument both the statement itself and the vertex corresponding to control-flow at the beginning of it (which we'll note "CF" below) and return the following:
 
@@ -4626,17 +4637,17 @@ The rules for analyzing statements take as argument both the statement itself an
 In the table below, `CF1, S -> CF2, B` means "run the analysis on S starting with control-flow CF1, apply the required changes to the graph, and name the resulting control-flow CF2, and the resulting set of behaviors B".
 Similarly, `CF, E -> CF, V, B` means "run the analysis on expression E, starting with control-flow CF, apply the required changes to the graph, and name the resulting control-flow vertex CF, the resulting value vertex V, and the resulting set of behaviors B" (see next section for the analysis of expressions).
 
-We have a similar set of rules for expressions in left-value positions, that we denote by `CF, E => CF, L, B`. Instead of computing the vertex which corresponds to the uniformity of the value, it computes the vertex which corresponds to the uniformity of the memory location we are adressing.
+We have a similar set of rules for expressions in left-value positions, that we denote by `CF, E => CF, L, B`. Instead of computing the vertex which corresponds to the uniformity of the value, it computes the vertex which corresponds to the uniformity of the variable we are adressing.
 
 <table class='data'>
   <caption>Uniformity rules for statements</caption>
   <thead>
-    <tr><th>Statement<th>New vertices<th>Precondition<th>Behaviors<th>Resulting control-flow vertex<th>New edges
+    <tr><th>Statement<th>New vertices<th>Recursive analyses<th>Behaviors<th>Resulting control-flow vertex<th>New edges
   </thead>
   <tr><td class="nowrap">*s1*; *s2*
       <td>
       <td class = "nowrap">*CF*, *s1* -> *CF1*, *B1*<br>
-          *CF1*, *s1* -> *CF2*, *B2*
+          *CF1*, *s2* -> *CF2*, *B2*
       <td>*B1* \ {Nothing} U *B2*
       <td>*CF2*
       <td>
@@ -4706,7 +4717,7 @@ TODO: double check the rule for loop. I had verified the rules for "for" and "wh
 
 ### Uniformity rules for function calls ### {#uniformity-function-calls}
 
-The most important and complex rule is for function calls:
+The most complex rule is for function calls:
 - For each argument, apply the corresponding expression rule, with the control-flow at the exit of the previous argument (using the control-flow at the beginning of the function call for the first argument). Name the corresponding value vertices "arg_i" and the corresponding control-flow vertices "CF_i"
 - Create two new vertices, named "Result" and "CF_after"
 - Look at the data we decided to remember while analyzing the function:
@@ -4792,7 +4803,7 @@ Like for statements, if the set of behaviors for an expression is a singleton, t
 <table class='data'>
   <caption>Uniformity rules for expressions in lvalue positions</caption>
   <thread>
-    <tr><th>Expression<th>New vertices<th>Precondition<th>Behaviors<th>Resulting control-flow vertex, location vertex<th>New edges
+    <tr><th>Expression<th>New vertices<th>Precondition<th>Behaviors<th>Resulting control-flow vertex, variable vertex<th>New edges
   </thead>
   <tr><td class="nowrap">reference to local variable "x"
       <td>
