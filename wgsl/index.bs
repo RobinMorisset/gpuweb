@@ -4624,7 +4624,7 @@ Note: Anything which is not explicitly remembered, including the entire graph ca
 ### Uniformity rules for statements ### {#uniformity-statements}
 
 In order to properly deal with reconvergence we must know when there is a single way for control to flow out of a statement.
-We achieve this by assigning to each statement a set of *behaviors* out of {Return, Break, Continue, Discard, Nothing}.
+We achieve this by assigning to each statement a set of *behaviors* out of {Return, Break, Continue, Discard, Fallthrough, Nothing}.
 Intuitively, this set corresponds to the ways that control flow can exit the statement.
 
 TODO: do we need an extra behavior for possibly infinite loops? I should check whether some form of reconvergence happens after something like `while(tid mod 2) {}`.
@@ -4686,6 +4686,12 @@ We have a similar set of rules for expressions in left-value positions, that we 
       <td>
       <td>
       <td>{Continue}
+      <td>*CF*
+      <td>
+<tr><td class="nowrap">fallthrough;
+      <td>
+      <td>
+      <td>{Fallthrough}
       <td>*CF*
       <td>
   <tr><td class="nowrap">discard;
