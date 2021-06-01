@@ -4759,9 +4759,6 @@ In more detail, here is the algorithm for analyzing a function:
 * Create some nodes called "MustBeUniform", "CannotBeUniform", "CF_start", "CF_return" and if the function is non-void a node called "Value_return"
 * Create one node for each parameter of the function which we'll call "arg_i"
 * Walk over the syntax of the function, adding nodes and edges to the graph following the rules of the next section.
-* Look at the *Behaviors* of the function body, using the rules for statements in the next section
-    * If it has a behavior which is neither Default nor Discard, then reject the program
-    * Else remember it for later.
 * Look at which nodes are reachable from "MustBeUniform"
     * If this set includes the node "CannotBeUniform", then reject the program.
     * Remember for later whether this set includes "CF_start" and/or any of the "arg_i"
@@ -4966,6 +4963,22 @@ Like for statements, if the set of behaviors for an expression is a singleton, t
       <td>*CF2*, *L1*
       <td class="nowrap">*L1* -> *V2*
 </table>
+
+### Annotating the uniformity of every point in the control-flow ### {#uniformity-optional-diagnosis-mode}
+
+This entire subsection is non-normative.
+
+If implementers want to provide developers with a diagnostic mode that shows for each point in the control-flow of the entire shader whether it is uniform or not (and thus whether it would be valid to call a function that requires uniformity there), we suggest the following:
+- Run the (mandatory, normative) analysis described in the previous subsections, keeping the graph for every function.
+- Reverse all edges in all of those graphs
+- Go through each function, starting with the entry point and never visiting a function before having visited all of its callers:
+    - Add an edge from CannotBeUniform to every argument that was non-uniform in at least one caller
+    - Add an edge from CannotBeUniform to CF_start if the function was called in non-uniform control-flow in at least one caller
+    - Look at which nodes are reachable from CannotBeUniform. Every node visited is an expression or point in the control-flow whose uniformity cannot be proven by the analysis
+
+Any node which is not visited by these reachability analyses can be proven to be uniform by the analysis (and so it would be safe to call a derivative or similar function there).
+
+Note: The bottom-up analysis is still required, as it lets us know what edges to add to the graphs when encountering calls.
 
 ## Compute Shaders and Workgroups ## {#compute-shader-workgroups}
 
