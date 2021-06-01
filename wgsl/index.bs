@@ -4029,13 +4029,15 @@ A behavior is simply a set, whose elements may be:
 - Break
 - Continue
 - Fallthrough
-- Nothing
+- Default
+
+Each of those correspond with a way to exit a compound statement: either through a keyword, or by simply falling to the next statement ("Default").
 
 We note "*s*: *B*" to say that *s* respects the rules regarding behaviors, and has behavior *B*.
-For each function, its body must be a valid statement by these rules, and its behavior must be one of {Nothing}, {Discard} or {Nothing, Discard}.
+For each function, its body must be a valid statement by these rules, and its behavior must be one of {Default}, {Discard} or {Default, Discard}.
 
 Similarly, we assign a behavior to each expression, since expressions can include function calls, which can discard.
-Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
+Expression behaviors are always one of {Default} or {Default, Discard}.
 
 <table class='data'>
   <caption>Rules for analyzing and validating the behaviors of statements</caption>
@@ -4045,20 +4047,20 @@ Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
   <tr>
     <td class="nowrap">*s1* ; *s2*
     <td class="nowrap">*s1*: *B1*<br>
-        Nothing in B1<br>
+        Default in B1<br>
         *s2*: *B2*
-    <td class="nowrap">*B1*\{Nothing} U *B2*
+    <td class="nowrap">*B1*\{Default} U *B2*
   <tr>
     <td class="nowrap">A variable declaration or assignment
     <td>
-    <td>{Nothing}
+    <td>{Default}
   <tr>
     <td class="nowrap">f(*e_1*, ..., *e_n*);
     <td class="nowrap">*e_1*: *B_1*<br>
         ...<br>
         *e_n*: *B_n*<br>
         *f*'s body has behavior *B*
-    <td class="nowrap">*B* U (*B_1* U ... U *B_n*)\{Nothing}
+    <td class="nowrap">*B* U (*B_1* U ... U *B_n*)\{Default}
   <tr>
     <td>return;
     <td>
@@ -4066,7 +4068,7 @@ Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
   <tr>
     <td class="nowrap">return *e*;
     <td class="nowrap">*e*: *B*<br>
-    <td class="nowrap">*B*\{Nothing} U {Return}
+    <td class="nowrap">*B*\{Default} U {Return}
   <tr>
     <td>discard;
     <td>
@@ -4088,22 +4090,22 @@ Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
     <td class="nowrap">*e: B*<br>
         *s1*: *B1*<br>
         *s2*: *B2*
-    <td class="nowrap">*B*\{Nothing} U B1 U B2
+    <td class="nowrap">*B*\{Default} U B1 U B2
   <tr>
     <td class="nowrap">loop {*s*}
     <td class="nowrap">*s*: *B*
-    <td class="nowrap">let b = *B* \ {Nothing};<br>
+    <td class="nowrap">let b = *B* \ {Default};<br>
         if (Continue in b) b = b \ {Continue};<br>
-        if (Break in b) b = b \ {Break} U {Nothing};<br>
+        if (Break in b) b = b \ {Break} U {Default};<br>
         b
   <tr>
     <td class="nowrap">loop {*s1* continuing {*s2*}}
     <td class="nowrap">*s1*: *B1*<br>
         *s2*: *B2*<br>
         None of {Break, Continue, Discard, Return} are in *B2*
-    <td class="nowrap">let b = (*B1* U *B2*) \ {Nothing};<br>
+    <td class="nowrap">let b = (*B1* U *B2*) \ {Default};<br>
         if (Continue in b) b = b \ {Continue};<br>
-        if (Break in b) b = b \ {Break} U {Nothing};<br>
+        if (Break in b) b = b \ {Break} U {Default};<br>
         b
   <tr>
     <td class="nowrap">switch(*e*) {case _: *s_1* ... case _: *s_n*}
@@ -4111,9 +4113,9 @@ Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
         *s_1*: *B_1*<br>
         ...<br>
         *s_n*: *B_n*<br>
-    <td class="nowrap">let b = *B* \ {Nothing} U B_1 U ... U B_n;<br>
+    <td class="nowrap">let b = *B* \ {Default} U B_1 U ... U B_n;<br>
         if (Fallthrough in b) b = b \ {Fallthrough};<br>
-        if (Break in b) b = b \ {Break} U {Nothing};<br>
+        if (Break in b) b = b \ {Break} U {Default};<br>
         b
 </table>
 
@@ -4132,11 +4134,11 @@ Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
   <tr>
     <td class="nowrap">Any literal
     <td>
-    <td class="nowrap">{Nothing}
+    <td class="nowrap">{Default}
   <tr>
     <td class="nowrap">Any variable reference
     <td>
-    <td class="nowrap">{Nothing}
+    <td class="nowrap">{Default}
   <tr>
     <td class="nowrap">e1[e2]
     <td class="nowrap">*e1*: *B1*<br>
@@ -4157,6 +4159,8 @@ Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
         *e2*: *B2*
     <td class="nowrap">*B1* U *B2*
 </table>
+
+All functions in the standard library count as having a body with behavior {Default}.
 
 # Functions # {#functions}
 
@@ -4750,7 +4754,7 @@ In more detail, here is the algorithm for analyzing a function:
 * Create one node for each parameter of the function which we'll call "arg_i"
 * Walk over the AST of the function, adding nodes and edges to the graph following the rules of the next section.
 * Look at the *Behaviors* of the function body, using the rules for statements in the next section
-    * If it has a behavior which is neither Nothing nor Discard, then reject the program
+    * If it has a behavior which is neither Default nor Discard, then reject the program
     * Else remember it for later.
 * Look at which nodes are reachable from "True"
     * If this set includes the node "False", then reject the program.
@@ -4870,7 +4874,7 @@ The most complex rule is for function calls:
 
 Note: Notice that this rule only requires adding a number of edges bounded by 1 + the number of parameters of the functions, independently of how complex the implementation of the function might be. This is key to the linear complexity of the overall algorithm.
 
-Functions in the standard library count as having a path from "Value_return" to all their "arg_i", no other relevant paths to remember, and behaviors of {Nothing}. Here is the list of exceptions to this rule:
+Functions in the standard library count as having a path from "Value_return" to all their "arg_i" and no other relevant paths to remember. Here is the list of exceptions to this rule:
 - The `||` and `&&` operators. Their rules are given in the next section (they cannot be treated like function calls because of short-circuiting)
 - TODO
 
