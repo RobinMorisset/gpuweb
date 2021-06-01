@@ -4015,6 +4015,149 @@ statement
 </pre>
 
 
+## Statements behaviors analysis ## {#behaviors}
+
+Some statements affecting control-flow are only valid in some contexts.
+For example, `fallthrough` is invalid outside of a switch, and `continue` is invalid outside of a loop.
+Additionally, the uniformity analysis (see [[#uniformity]]) needs to know when control flow can exit a statement in two different ways.
+Both of these goals are achieved by a simple type system applied to statements.
+To avoid confusion with the types of expressions, we call the types of statements behaviors.
+
+A behavior is simply a set, whose elements may be:
+- Return
+- Discard
+- Break
+- Continue
+- Fallthrough
+- Nothing
+
+We note "*s*: *B*" to say that *s* respects the rules regarding behaviors, and has behavior *B*.
+For each function, its body must be a valid statement by these rules, and its behavior must be one of {Nothing}, {Discard} or {Nothing, Discard}.
+
+Similarly, we assign a behavior to each expression, since expressions can include function calls, which can discard.
+Expression behaviors are always one of {Nothing} or {Nothing, Discard}.
+
+<table class='data'>
+  <caption>Rules for analyzing and validating the behaviors of statements</caption>
+  <thead>
+    <tr><th>Statement<th>Preconditions<th>Resulting behavior
+  </thead>
+  <tr>
+    <td class="nowrap">*s1* ; *s2*
+    <td class="nowrap">*s1*: *B1*<br>
+        Nothing in B1<br>
+        *s2*: *B2*
+    <td class="nowrap">*B1*\{Nothing} U *B2*
+  <tr>
+    <td class="nowrap">A variable declaration or assignment
+    <td>
+    <td>{Nothing}
+  <tr>
+    <td class="nowrap">f(*e_1*, ..., *e_n*);
+    <td class="nowrap">*e_1*: *B_1*<br>
+        ...<br>
+        *e_n*: *B_n*<br>
+        *f*'s body has behavior *B*
+    <td class="nowrap">*B* U (*B_1* U ... U *B_n*)\{Nothing}
+  <tr>
+    <td>return;
+    <td>
+    <td>{Return}
+  <tr>
+    <td class="nowrap">return *e*;
+    <td class="nowrap">*e*: *B*<br>
+    <td class="nowrap">*B*\{Nothing} U {Return}
+  <tr>
+    <td>discard;
+    <td>
+    <td>{Discard}
+  <tr>
+    <td>break;
+    <td>
+    <td>{Break}
+  <tr>
+    <td>continue;
+    <td>
+    <td>{Continue}
+  <tr>
+    <td>fallthrough;
+    <td>
+    <td>{Fallthrough}
+  <tr>
+    <td class="nowrap">if (*e*) *s1* else *s2*
+    <td class="nowrap">*e: B*<br>
+        *s1*: *B1*<br>
+        *s2*: *B2*
+    <td class="nowrap">*B*\{Nothing} U B1 U B2
+  <tr>
+    <td class="nowrap">loop {*s*}
+    <td class="nowrap">*s*: *B*
+    <td class="nowrap">let b = *B* \ {Nothing};<br>
+        if (Continue in b) b = b \ {Continue};<br>
+        if (Break in b) b = b \ {Break} U {Nothing};<br>
+        b
+  <tr>
+    <td class="nowrap">loop {*s1* continuing {*s2*}}
+    <td class="nowrap">*s1*: *B1*<br>
+        *s2*: *B2*<br>
+        None of {Break, Continue, Discard, Return} are in *B2*
+    <td class="nowrap">let b = (*B1* U *B2*) \ {Nothing};<br>
+        if (Continue in b) b = b \ {Continue};<br>
+        if (Break in b) b = b \ {Break} U {Nothing};<br>
+        b
+  <tr>
+    <td class="nowrap">switch(*e*) {case _: *s_1* ... case _: *s_n*}
+    <td class="nowrap">*e*: *B*<br>
+        *s_1*: *B_1*<br>
+        ...<br>
+        *s_n*: *B_n*<br>
+    <td class="nowrap">let b = *B* \ {Nothing} U B_1 U ... U B_n;<br>
+        if (Fallthrough in b) b = b \ {Fallthrough};<br>
+        if (Break in b) b = b \ {Break} U {Nothing};<br>
+        b
+</table>
+
+<table class='data'>
+  <caption>Rules for analyzing and validating the behaviors of expressions</caption>
+  <thead>
+    <tr><th>Expression<th>Preconditions<th>Resulting behavior
+  </thead>
+  <tr>
+    <td class="nowrap">f(*e_1*, ..., *e_n*)
+    <td class="nowrap">*e_1*: *B_1*<br>
+        ...<br>
+        *e_n*: *B_n*<br>
+        *f*'s body has behavior *B*
+    <td class="nowrap">*B* U *B_1* U ... U *B_n*
+  <tr>
+    <td class="nowrap">Any literal
+    <td>
+    <td class="nowrap">{Nothing}
+  <tr>
+    <td class="nowrap">Any variable reference
+    <td>
+    <td class="nowrap">{Nothing}
+  <tr>
+    <td class="nowrap">e1[e2]
+    <td class="nowrap">*e1*: *B1*<br>
+        *e2*: *B2*
+    <td class="nowrap">*B1* U *B2*
+  <tr>
+    <td class="nowrap">e.field
+    <td class="nowrap">*e*: *B*
+    <td class="nowrap">*B*
+  <tr>
+    <td class="nowrap">e1 || e2
+    <td class="nowrap">*e1*: *B1*<br>
+        *e2*: *B2*
+    <td class="nowrap">*B1* U *B2*
+  <tr>
+    <td class="nowrap">e1 && e2
+    <td class="nowrap">*e1*: *B1*<br>
+        *e2*: *B2*
+    <td class="nowrap">*B1* U *B2*
+</table>
+
 # Functions # {#functions}
 
 A <dfn noexport>function</dfn> performs computational work when invoked.
@@ -4624,100 +4767,85 @@ Note: Anything which is not explicitly remembered, including the entire graph ca
 ### Uniformity rules for statements ### {#uniformity-statements}
 
 In order to properly deal with reconvergence we must know when there is a single way for control to flow out of a statement.
-We achieve this by assigning to each statement a set of *behaviors* out of {Return, Break, Continue, Discard, Fallthrough, Nothing}.
-Intuitively, this set corresponds to the ways that control flow can exit the statement.
-
-TODO: do we need an extra behavior for possibly infinite loops? I should check whether some form of reconvergence happens after something like `while(tid mod 2) {}`.
+This is achieved by following the behaviors analysis (see [[#behaviors]]).
 
 If the set of behaviors for a statement has a single element, this means that we either did not diverge within the statement, or we reconverged, and we pick the node corresponding to control flow at the start of the statement as the node corresponding to control flow at the exit of the statement, overriding the other rules below.
 
-The rules for analyzing statements take as argument both the statement itself and the node corresponding to control flow at the beginning of it (which we'll note "CF" below) and return the following:
+The rules for analyzing statements take as argument both the statement itself and the node corresponding to control flow at the beginning of it (which we'll note "CF" below) and return both of the following:
 
-* A set of behaviors for the statement
 * A node corresponding to control flow at the exit of it
 * A set of new nodes and edges to add to the graph
 
-In the table below, `CF1, S -> CF2, B` means "run the analysis on S starting with control flow CF1, apply the required changes to the graph, and name the resulting control flow CF2, and the resulting set of behaviors B".
-Similarly, `CF1, E -> CF2, V, B` means "run the analysis on expression E, starting with control flow CF1, apply the required changes to the graph, and name the resulting control flow node CF2, the resulting value node V, and the resulting set of behaviors B" (see next section for the analysis of expressions).
+In the table below, `(CF1, S) -> CF2` means "run the analysis on S starting with control flow CF1, apply the required changes to the graph, and name the resulting control flow CF2".
+Similarly, `(CF1, E) -> (CF2, V)` means "run the analysis on expression E, starting with control flow CF1, apply the required changes to the graph, and name the resulting control flow node CF2 and the resulting value node V" (see next section for the analysis of expressions).
 
-We have a similar set of rules for expressions in left-value positions, that we denote by `CF, E => CF, L, B`. Instead of computing the node which corresponds to the uniformity of the value, it computes the node which corresponds to the uniformity of the variable we are adressing.
+We have a similar set of rules for expressions in left-value positions, that we denote by `(CF, E) => (CF, L)`. Instead of computing the node which corresponds to the uniformity of the value, it computes the node which corresponds to the uniformity of the variable we are adressing.
 
 <table class='data'>
   <caption>Uniformity rules for statements</caption>
   <thead>
-    <tr><th>Statement<th>New nodes<th>Recursive analyses<th>Behaviors<th>Resulting control flow node<th>New edges
+    <tr><th>Statement<th>New nodes<th>Recursive analyses<th>Resulting control flow node<th>New edges
   </thead>
   <tr><td class="nowrap">*s1*; *s2*
       <td>
-      <td class = "nowrap">*CF*, *s1* -> *CF1*, *B1*<br>
-          *CF1*, *s2* -> *CF2*, *B2*
-      <td>*B1* \ {Nothing} U *B2*
+      <td class = "nowrap">(*CF*, *s1*) -> *CF1*<br>
+          (*CF1*, *s2*) -> *CF2*
       <td>*CF2*
       <td>
   <tr><td class="nowrap">if (*e*) then *s1* else *s2*
       <td>*CFinside*, *CFend*
-      <td class="nowrap">*CF*, *e* -> *CF'*, *V*, *B*<br>
-          *CFinside*, *s1* -> *CF1*, *B1*<br>
-          *CFinside*, *s2* -> *CF2*, *B2*
-      <td>*B* U *B1* U *B2*
+      <td class="nowrap">(*CF*, *e*) -> (*CF'*, *V*)<br>
+          (*CFinside*, *s1*) -> *CF1*<br>
+          (*CFinside*, *s2*) -> *CF2*
       <td>*CFend*
       <td class="nowrap">*CFinside* -> {*CF'*, *V*}<br>
           *CFend* -> {*CF1*, *CF2*}
   <tr><td class="nowrap">loop {*s1* continuing {*s2*}}
       <td>*CF'*
-      <td class="nowrap">*CF'*, *s1* -> *CF1*, *B1*<br>
-          *CF1*, *s2* -> *CF2*, *B2*
-      <td>*B1* \ {Break, Continue} U *B2* U {Nothing}
+      <td class="nowrap">(*CF'*, *s1*) -> *CF1*<br>
+          (*CF1*, *s2*) -> *CF2*
       <td>*CF'*
       <td class="nowrap">*CF'* -> {*CF2*, *CF*}
   <tr><td class="nowrap">loop {*s1*}
       <td>*CF'*
-      <td class="nowrap">*CF'*, *s1* -> *CF1*, *B1*
-      <td>*B1* \ {Break, Continue} U {Nothing}
+      <td class="nowrap">(*CF'*, *s1*) -> *CF1*
       <td>*CF'*
       <td class="nowrap">*CF'* -> {*CF1*, *CF*}
   <tr><td class="nowrap">break;
       <td>
       <td>
-      <td>{Break}
       <td>*CF*
       <td>
   <tr><td class="nowrap">continue;
       <td>
       <td>
-      <td>{Continue}
       <td>*CF*
       <td>
 <tr><td class="nowrap">fallthrough;
       <td>
       <td>
-      <td>{Fallthrough}
       <td>*CF*
       <td>
   <tr><td class="nowrap">discard;
       <td>
       <td>
-      <td>{Discard}
       <td>*CF*
       <td>
   <tr><td class="nowrap">return;
       <td>
       <td>
-      <td>{Return}
       <td>*CF*
       <td>*CF_return* -> *CF*
   <tr><td class="nowrap">return *e*;
       <td>
-      <td class="nowrap">*CF*, *e* -> *CF'*, *V*, *B*
-      <td>B \ {Nothing} U {Return}
+      <td class="nowrap">(*CF*, *e*) -> (*CF'*, *V*)
       <td>*CF'*
       <td>*CF_return* -> *CF'*<br>
           *Value_return* -> *V*
   <tr><td class="nowrap">e1 = e2;
       <td>
-      <td class="nowrap">*CF*, *e1* => *CF1*, *L1*, *B1*<br>
-          *CF1*, *e2* -> *CF2*, *V2*, *B2*
-      <td>B1 U B2
+      <td class="nowrap">(*CF*, *e1*) => (*CF1*, *L1*)<br>
+          (*CF1*, *e2*) -> (*CF2*, *V2*)
       <td>*CF2*
       <td>*L1* -> {*V2*, *CF*}
 </table>
@@ -4738,7 +4866,7 @@ The most complex rule is for function calls:
     - If there was a path from CF_return to arg_i, add an edge from CF_after to arg_i
     - If there was a path from Value_return to arg_i, add an edge from Result to arg_i
 - Add an edge from Result to CF_after, and an edge from CF_after to the last CF_i
-- Finally return the nodes "CF_after", "Result", and the set of behaviors that we decided to remember for this function.
+- Finally return the nodes "CF_after" and "Result"
 
 Note: Notice that this rule only requires adding a number of edges bounded by 1 + the number of parameters of the functions, independently of how complex the implementation of the function might be. This is key to the linear complexity of the overall algorithm.
 
@@ -4760,51 +4888,44 @@ Like for statements, if the set of behaviors for an expression is a singleton, t
 <table class='data'>
   <caption>Uniformity rules for expressions (in normal rvalue position)</caption>
   <thead>
-    <tr><th>Expression<th>New nodes<th>Recursive analyses<th>Behaviors<th>Resulting control flow node, value node<th>New edges
+    <tr><th>Expression<th>New nodes<th>Recursive analyses<th>Resulting control flow node, value node<th>New edges
   </thead>
   <tr><td class="nowrap">e1 || e2
       <td>*CF'*
       <td class="nowrap">*CF*, *e1* -> *CF1*, *V1*, *B1*<br>
           *CF'*, *e2* -> *CF2*, *V2*, *B2*<br>
-      <td>*B1* U *B2*
       <td>*CF2*, *V2*
       <td class="nowrap">*CF'* -> {*CF1*, *V1*}<br>
   <tr><td class="nowrap">e1 && e2
       <td>*CF'*
       <td class="nowrap">*CF*, *e1* -> *CF1*, *V1*, *B1*<br>
           *CF'*, *e2* -> *CF2*, *V2*, *B2*<br>
-      <td>*B1* U *B2*
       <td>*CF2*, *V2*
       <td class="nowrap">*CF'* -> {*CF1*, *V1*}<br>
   <tr><td class="nowrap">Literal
       <td>
       <td>
-      <td>{Nothing}
       <td>*CF*, *CF*
       <td>
    <tr><td class="nowrap">reference to local variable "x"
       <td> *Result*
       <td class="nowrap">*X* is the node corresponding to "x"
-      <td>{Nothing}
       <td>*CF*, *Result*
       <td class="nowrap">*Result* -> {*CF*, *X*}<br>
    <tr><td class="nowrap">reference to global variable "x"
       <td>
       <td>
-      <td>{Nothing}
       <td>*CF*, *False*
       <td>
    <tr><td class="nowrap">e1.field
       <td>
       <td class="nowrap">*CF*, *e1* -> *CF1*, *V1*, *B1*
-      <td>*B1*
       <td>*CF1*, *V1*
       <td>
    <tr><td class="nowrap">e1[e2]
       <td> *Result*
       <td class="nowrap">*CF*, *e1* -> *CF1*, *V1*, *B1*<br>
           *CF1*, *e2* -> *CF2*, *V2*, *B2*
-      <td>*B1* U *B2*
       <td>*CF2*, *Result*
       <td class="nowrap">*Result* -> {*V1*, *V2*}
 </table>
@@ -4812,31 +4933,27 @@ Like for statements, if the set of behaviors for an expression is a singleton, t
 <table class='data'>
   <caption>Uniformity rules for expressions in lvalue positions</caption>
   <thead>
-    <tr><th>Expression<th>New nodes<th>Recursive analyses<th>Behaviors<th>Resulting control flow node, variable node<th>New edges
+    <tr><th>Expression<th>New nodes<th>Recursive analyses<th>Resulting control flow node, variable node<th>New edges
   </thead>
   <tr><td class="nowrap">reference to local variable "x"
       <td>
       <td class="nowrap">*X* is the node corresponding to "x"
-      <td>{Nothing}
       <td>*CF*, *X*
       <td>
   <tr><td class="nowrap">reference to global variable "x"
       <td>
       <td>
-      <td>{Nothing}
       <td>*CF*, *False*
       <td>
   <tr><td class="nowrap">e1.field
       <td>
       <td class="nowrap">*CF*, *e1* => *CF1*, *L1*, *B1*
-      <td>*B1*
       <td>*CF1*, *L1*
       <td>
   <tr><td class="nowrap">e1[e2]
       <td>
       <td class="nowrap">*CF*, *e1* => *CF1*, *L1*, *B1*<br>
           *CF1*, *e2* -> *CF2*, *V2*, *B2*
-      <td>*B1* U *B2*
       <td>*CF2*, *L1*
       <td class="nowrap">*L1* -> *V2*
 </table>
