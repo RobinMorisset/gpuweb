@@ -4735,7 +4735,7 @@ Note: another way of saying the same thing is that we do a topological sort of f
 
 Each function is analyzed in two phases.
 
-The first phase walks over the AST of the function, building a directed graph along the way based on the rules in the following subsections.
+The first phase walks over the syntax of the function, building a directed graph along the way based on the rules in the following subsections.
 The second phase explores that graph, resulting in either rejecting the program, or computing the constraints on calling this function.
 
 <div class="note">Note: apart from two special nodes True and False, all nodes can be understood as having one of the following meanings:
@@ -4752,7 +4752,7 @@ In more detail, here is the algorithm for analyzing a function:
 
 * Create some nodes called "True", "False", "CF_start", "CF_return" and if the function is non-void a node called "Value_return"
 * Create one node for each parameter of the function which we'll call "arg_i"
-* Walk over the AST of the function, adding nodes and edges to the graph following the rules of the next section.
+* Walk over the syntax of the function, adding nodes and edges to the graph following the rules of the next section.
 * Look at the *Behaviors* of the function body, using the rules for statements in the next section
     * If it has a behavior which is neither Default nor Discard, then reject the program
     * Else remember it for later.
