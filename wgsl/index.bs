@@ -4738,33 +4738,33 @@ Each function is analyzed in two phases.
 The first phase walks over the syntax of the function, building a directed graph along the way based on the rules in the following subsections.
 The second phase explores that graph, resulting in either rejecting the program, or computing the constraints on calling this function.
 
-<div class="note">Note: apart from two special nodes True and False, all nodes can be understood as having one of the following meanings:
+<div class="note">Note: apart from two special nodes MustBeUniform and CannotBeUniform, all nodes can be understood as having one of the following meanings:
         - The control flow at a specific program point must be uniform
         - The value of a specific expression must be uniform
         - A specific variable must always hold a uniform value
 
         An edge can be understood as an implication from the statement corresponding to its source node to the statement corresponding to its target node.
-        In particular, to express that something must always be uniform (e.g. the control flow at the call site of a derivative), we simply add an edge from True to the corresponding node.
-        Reciprocally, to express that we cannot ensure the uniformity of something (e.g. a variable which holds the thread id), we simply add an edge from the corresponding node to False
+        In particular, to express that something must always be uniform (e.g. the control flow at the call site of a derivative), we simply add an edge from MustBeUniform to the corresponding node.
+        Reciprocally, to express that we cannot ensure the uniformity of something (e.g. a variable which holds the thread id), we simply add an edge from the corresponding node to CannotBeUniform
 </div>
 
 In more detail, here is the algorithm for analyzing a function:
 
-* Create some nodes called "True", "False", "CF_start", "CF_return" and if the function is non-void a node called "Value_return"
+* Create some nodes called "MustBeUniform", "CannotBeUniform", "CF_start", "CF_return" and if the function is non-void a node called "Value_return"
 * Create one node for each parameter of the function which we'll call "arg_i"
 * Walk over the syntax of the function, adding nodes and edges to the graph following the rules of the next section.
 * Look at the *Behaviors* of the function body, using the rules for statements in the next section
     * If it has a behavior which is neither Default nor Discard, then reject the program
     * Else remember it for later.
-* Look at which nodes are reachable from "True"
-    * If this set includes the node "False", then reject the program.
+* Look at which nodes are reachable from "MustBeUniform"
+    * If this set includes the node "CannotBeUniform", then reject the program.
     * Remember for later whether this set includes "CF_start" and/or any of the "arg_i"
     * (optional, makes the analysis faster) Remove from the graph all nodes that have been visited
 * Look at which nodes are reachable from "CF_return"
-    * Remember for later whether this set includes "False" and/or any of the "arg_i"
+    * Remember for later whether this set includes "CannotBeUniform" and/or any of the "arg_i"
     * (optional, makes the analysis faster) Remove from the graph all nodes that have been visited
 * If "Value_return" exists, look at which nodes are reachable from it
-    * Remember for later whether this set includes "False" and/or any of the "arg_i"
+    * Remember for later whether this set includes "CannotBeUniform" and/or any of the "arg_i"
 
 Note: Anything which is not explicitly remembered, including the entire graph can be destroyed at this point. The little information that we do need to remember to analyze the caller is linear in the number of parameters of the function.
 
@@ -4862,11 +4862,11 @@ The most complex rule is for function calls:
 - For each argument, apply the corresponding expression rule, with the control flow at the exit of the previous argument (using the control flow at the beginning of the function call for the first argument). Name the corresponding value nodes "arg_i" and the corresponding control flow nodes "CF_i"
 - Create two new nodes, named "Result" and "CF_after"
 - Look at the data we decided to remember while analyzing the function:
-    - If there was a path from True to CF_start, add an edge from True to the last CF_i
-    - If there was a path from CF_return to False, add an edge from CF_after to False
-    - If there was a path from Value_return to False, add an edge from Result to False
+    - If there was a path from MustBeUniform to CF_start, add an edge from MustBeUniform to the last CF_i
+    - If there was a path from CF_return to CannotBeUniform, add an edge from CF_after to CannotBeUniform
+    - If there was a path from Value_return to CannotBeUniform, add an edge from Result to CannotBeUniform
 - Similarly for each argument *i*:
-    - If there was a path from True to arg_i, add an edge from True to arg_i
+    - If there was a path from MustBeUniform to arg_i, add an edge from MustBeUniform to arg_i
     - If there was a path from CF_return to arg_i, add an edge from CF_after to arg_i
     - If there was a path from Value_return to arg_i, add an edge from Result to arg_i
 - Add an edge from Result to CF_after, and an edge from CF_after to the last CF_i
@@ -4919,7 +4919,7 @@ Like for statements, if the set of behaviors for an expression is a singleton, t
    <tr><td class="nowrap">reference to global variable "x"
       <td>
       <td>
-      <td>*CF*, *False*
+      <td>*CF*, *CannotBeUniform*
       <td>
    <tr><td class="nowrap">e1.field
       <td>
@@ -4947,7 +4947,7 @@ Like for statements, if the set of behaviors for an expression is a singleton, t
   <tr><td class="nowrap">reference to global variable "x"
       <td>
       <td>
-      <td>*CF*, *False*
+      <td>*CF*, *CannotBeUniform*
       <td>
   <tr><td class="nowrap">e1.field
       <td>
