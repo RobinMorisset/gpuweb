@@ -4744,8 +4744,14 @@ The second phase explores that graph, resulting in either rejecting the program,
         - A specific variable must always hold a uniform value
 
         An edge can be understood as an implication from the statement corresponding to its source node to the statement corresponding to its target node.
-        In particular, to express that something must always be uniform (e.g. the control flow at the call site of a derivative), we simply add an edge from MustBeUniform to the corresponding node.
-        Reciprocally, to express that we cannot ensure the uniformity of something (e.g. a variable which holds the thread id), we simply add an edge from the corresponding node to CannotBeUniform
+
+        To express that something must always be uniform (e.g. the control flow at the call site of a derivative), we simply add an edge from MustBeUniform to the corresponding node.
+        One way to understand this, is that MustBeUniform corresponds to the proposition True, so that MustBeUniform -> X is the same as saying that X is true.
+
+        Reciprocally, to express that we cannot ensure the uniformity of something (e.g. a variable which holds the thread id), we simply add an edge from the corresponding node to CannotBeUniform.
+        One way to understand this, is that CannotBeUniform corresponds to the proposition False, so that X -> CannotBeUniform is the same as saying that X is false.
+
+        A consequence of this interpretation is that every node reachable from MustBeUniform corresponds to something which must be uniform for the program to be valid, and every node from which cannotBeUniform is reachable corresponds to something whose uniformity we cannot guarantee. It follows that we have a uniformity violation (and thus reject the program) if there is any path from MustBeUniform to CannotBeUniform.
 </div>
 
 In more detail, here is the algorithm for analyzing a function:
